@@ -1,0 +1,196 @@
+#define BLYNK_TEMPLATE_ID "TMPL6NRCp-nsE"
+#define BLYNK_TEMPLATE_NAME "IoT Fish Feeder and Water Quality Monitor"
+#define BLYNK_AUTH_TOKEN "PzIDOTPRk8MGYhV7GcuXdB7ZnSQvzVWy"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <ESP32Servo.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+char ssid[] = "Wokwi-GUEST";
+char pass[] = "";
+
+#define SERVO_PIN 18
+#define ONE_WIRE_BUS 4
+#define TURBIDITY_PIN 34
+#define PH_PIN 35
+
+Servo feederServo;
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+float temperatureC;
+float pHValue;
+float turbidityValue;
+
+int feedingIntervalHours = 6;
+
+unsigned long previousFeedMillis = 0;
+unsigned long feedingIntervalMillis;
+
+BlynkTimer timer;
+
+BLYNK_WRITE(V3)
+{
+  feedingIntervalHours = param.asInt();
+
+  feedingIntervalMillis =
+      (unsigned long)feedingIntervalHours * 3600000UL;
+
+  Serial.print("Updated Feeding Interval: ");
+  Serial.print(feedingIntervalHours);
+  Serial.println(" hours");
+}
+
+float readTemperature()
+{
+  sensors.requestTemperatures();
+  return sensors.getTempCByIndex(0);
+}
+
+float readPH()
+{
+  int samples = 10;
+  float adcAverage = 0;
+
+  for(int i = 0; i < samples; i++)
+  {
+    adcAverage += analogRead(PH_PIN);
+    delay(10);
+  }
+
+  adcAverage /= samples;
+
+  float voltage =
+      adcAverage * (3.3 / 4095.0);
+
+  float ph = 3.5 * voltage;
+
+  return ph;
+}
+
+float readTurbidity()
+{
+  int samples = 10;
+  float adcAverage = 0;
+
+  for(int i = 0; i < samples; i++)
+  {
+    adcAverage += analogRead(TURBIDITY_PIN);
+    delay(10);
+  }
+
+  adcAverage /= samples;
+
+  float voltage =
+      adcAverage * (3.3 / 4095.0);
+
+  return voltage;
+}
+
+void feedFish()
+{
+  Serial.println("Feeding Fish...");
+
+  feederServo.write(50);
+  delay(1000);
+
+  feederServo.write(0);
+  delay(1000);
+
+  Blynk.logEvent("fish_feed", "Fish feeding completed");
+}
+
+void checkWaterQuality()
+{
+  if(temperatureC < 22 || temperatureC > 27)
+  {
+    Blynk.logEvent(
+      "temp_alert",
+      "Temperature outside safe range!"
+    );
+  }
+
+  if(pHValue < 6.5 || pHValue > 7.5)
+  {
+    Blynk.logEvent(
+      "ph_alert",
+      "pH outside safe range!"
+    );
+  }
+
+  if(turbidityValue > 2.5)
+  {
+    Blynk.logEvent(
+      "turbidity_alert",
+      "Water turbidity too high!"
+    );
+  }
+}
+
+void sendSensorData()
+{
+  temperatureC = readTemperature();
+  pHValue = readPH();
+  turbidityValue = readTurbidity();
+
+  Serial.print("Temperature: ");
+  Serial.println(temperatureC);
+
+  Serial.print("pH: ");
+  Serial.println(pHValue);
+
+  Serial.print("Turbidity Voltage: ");
+  Serial.println(turbidityValue);
+
+  Blynk.virtualWrite(V0, temperatureC);
+  Blynk.virtualWrite(V1, pHValue);
+  Blynk.virtualWrite(V2, turbidityValue);
+
+  checkWaterQuality();
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  feederServo.attach(SERVO_PIN);
+  feederServo.write(0);
+
+  sensors.begin();
+
+  analogReadResolution(12);
+
+  feedingIntervalMillis =
+      feedingIntervalHours * 3600000UL;
+
+  Blynk.begin(
+    BLYNK_AUTH_TOKEN,
+    ssid,
+    pass
+  );
+
+  timer.setInterval(
+    5000L,
+    sendSensorData
+  );
+  feedFish();
+}
+
+void loop()
+{
+  Blynk.run();
+  timer.run();
+
+  unsigned long currentMillis = millis();
+
+  if(currentMillis - previousFeedMillis
+      >= feedingIntervalMillis)
+  {
+    previousFeedMillis = currentMillis;
+
+    feedFish();
+  }
+}
