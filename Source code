@@ -8,8 +8,8 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-char ssid[] = "Wokwi-GUEST";
-char pass[] = "";
+char ssid[] = "Galaxy S20akif";
+char pass[] = "akif2006";
 
 #define SERVO_PIN 18
 #define ONE_WIRE_BUS 4
